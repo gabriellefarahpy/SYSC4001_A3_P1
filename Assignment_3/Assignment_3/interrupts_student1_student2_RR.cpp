@@ -39,9 +39,8 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
     // make the output table (the header row)
     execution_status = print_exec_header();
 
-    // Set time slice for RR
-    const unsigned int TIME_SLICE = 4;
-    unsigned int time_in_slice = 0;
+    const unsigned int TIME_QUANTUM = 100;
+    unsigned int time_slice = 0;
 
     // Loop while till there are no ready or waiting processes.
     // This is the main reason I have job_list, you don't have to use it.
@@ -71,11 +70,12 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
         }
 
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
+        // This mainly involves keeping track of how long a process must remain in the ready queue
         for (auto it = wait_queue.begin(); it != wait_queue.end();)
         {
-            it->remaining_time -= 1; // Simulate 1ms of waiting
+            it->remaining_time -= 1;
             if (it->remaining_time <= 0)
-            { // I/O finished
+            {
                 it->state = READY;
                 ready_queue.push_back(*it);
                 execution_status += print_exec_status(current_time, it->PID, WAITING, READY);
@@ -89,51 +89,69 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
         /////////////////////////////////////////////////////////////////
 
         //////////////////////////SCHEDULER//////////////////////////////
+        FCFS(ready_queue); // example of FCFS is shown here
+
+        // Round Robin Scheduling
         if (running.PID == -1 && !ready_queue.empty())
         {
-            // Pick first process in ready queue
             running = ready_queue.front();
             ready_queue.erase(ready_queue.begin());
             running.state = RUNNING;
             if (running.start_time == -1)
+            {
                 running.start_time = current_time;
-            time_in_slice = 0;
+            }
+            time_slice = 0;
             execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
         }
 
-        // Execute running process
         if (running.PID != -1)
         {
             running.remaining_time -= 1;
-            time_in_slice += 1;
+            time_slice += 1;
 
-            // Check if process finished
-            if (running.remaining_time <= 0)
+            // Check for I/O request
+            if (running.io_freq > 0 &&
+                (running.processing_time - running.remaining_time) % running.io_freq == 0 &&
+                running.remaining_time > 0)
             {
-                terminate_process(running, job_list);
-                execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
+
+                running.state = WAITING;
+                running.remaining_time = running.io_duration;
+                wait_queue.push_back(running);
+                execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
                 idle_CPU(running);
-                time_in_slice = 0;
+                time_slice = 0;
             }
-            // Check if time slice is over
-            else if (time_in_slice >= TIME_SLICE)
+            // Time quantum expired
+            else if (time_slice >= TIME_QUANTUM && running.remaining_time > 0)
             {
                 running.state = READY;
                 ready_queue.push_back(running);
                 execution_status += print_exec_status(current_time, running.PID, RUNNING, READY);
                 idle_CPU(running);
-                time_in_slice = 0;
+                time_slice = 0;
+            }
+            // Process finished
+            else if (running.remaining_time <= 0)
+            {
+                terminate_process(running, job_list);
+                execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
+                idle_CPU(running);
+                time_slice = 0;
             }
         }
 
-        // Pick next process if CPU is idle
+        // Get next process if CPU is idle
         if (running.PID == -1 && !ready_queue.empty())
         {
             running = ready_queue.front();
             ready_queue.erase(ready_queue.begin());
             running.state = RUNNING;
             if (running.start_time == -1)
+            {
                 running.start_time = current_time;
+            }
             execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
         }
         /////////////////////////////////////////////////////////////////

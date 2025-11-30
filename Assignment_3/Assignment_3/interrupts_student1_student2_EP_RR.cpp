@@ -24,9 +24,9 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
     std::vector<PCB> ready_queue; // The ready queue of processes
     std::vector<PCB> wait_queue;  // The wait queue of processes
     std::vector<PCB> job_list;    // A list to keep track of all the processes. This is similar
-                                  // to the "Process, Arrival time, Burst time" table that you
-                                  // see in questions. You don't need to use it, I put it here
-                                  // to make the code easier :).
+                               // to the "Process, Arrival time, Burst time" table that you
+                               // see in questions. You don't need to use it, I put it here
+                               // to make the code easier :).
 
     unsigned int current_time = 0;
     PCB running;
@@ -70,10 +70,11 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
         }
 
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
+        // This mainly involves keeping track of how long a process must remain in the ready queue
         for (auto it = wait_queue.begin(); it != wait_queue.end();)
         {
-            it->remaining_time -= 1;     // Simulate 1ms of waiting
-            if (it->remaining_time <= 0) // I/O finished
+            it->remaining_time -= 1;
+            if (it->remaining_time <= 0)
             {
                 it->state = READY;
                 ready_queue.push_back(*it);
@@ -90,15 +91,28 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
         //////////////////////////SCHEDULER//////////////////////////////
         FCFS(ready_queue); // example of FCFS is shown here
 
+        // Combined External Priority + Round Robin
         if (running.PID == -1 && !ready_queue.empty())
         {
-            running = ready_queue.back();
-            ready_queue.pop_back();
+            // Find process with lowest PID (highest priority)
+            auto highest_priority = ready_queue.begin();
+            for (auto it = ready_queue.begin(); it != ready_queue.end(); ++it)
+            {
+                if (it->PID < highest_priority->PID)
+                {
+                    highest_priority = it;
+                }
+            }
+
+            running = *highest_priority;
             running.state = RUNNING;
             if (running.start_time == -1)
+            {
                 running.start_time = current_time;
+            }
             time_slice = 0;
             execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+            ready_queue.erase(highest_priority);
         }
 
         if (running.PID != -1)
@@ -111,13 +125,15 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
                 (running.processing_time - running.remaining_time) % running.io_freq == 0 &&
                 running.remaining_time > 0)
             {
+
                 running.state = WAITING;
+                running.remaining_time = running.io_duration;
                 wait_queue.push_back(running);
                 execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
                 idle_CPU(running);
                 time_slice = 0;
             }
-            // Time slice expired (preemption)
+            // Time quantum expired
             else if (time_slice >= TIME_QUANTUM && running.remaining_time > 0)
             {
                 running.state = READY;

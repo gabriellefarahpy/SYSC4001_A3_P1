@@ -67,11 +67,12 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
         }
 
         ///////////////////////MANAGE WAIT QUEUE/////////////////////////
+        // This mainly involves keeping track of how long a process must remain in the ready queue
         for (auto it = wait_queue.begin(); it != wait_queue.end();)
         {
-            it->remaining_time -= 1; // Simulate 1ms of waiting
+            it->remaining_time -= 1;
             if (it->remaining_time <= 0)
-            { // I/O finished
+            {
                 it->state = READY;
                 ready_queue.push_back(*it);
                 execution_status += print_exec_status(current_time, it->PID, WAITING, READY);
@@ -85,34 +86,50 @@ std::tuple<std::string /* add std::string for bonus mark */> run_simulation(std:
         /////////////////////////////////////////////////////////////////
 
         //////////////////////////SCHEDULER//////////////////////////////
-        // Extreme Priority Scheduling: pick the process with highest priority
-        if (!ready_queue.empty())
+        FCFS(ready_queue); // example of FCFS is shown here
+
+        // External Priority Scheduling - Lower PID = Higher Priority
+        if (running.PID == -1 && !ready_queue.empty())
         {
-            auto it = std::max_element(ready_queue.begin(), ready_queue.end(),
-                                       [](const PCB &a, const PCB &b)
-                                       { return a.priority < b.priority; });
-            if (running.PID == -1 || (it->priority > running.priority))
+            // Find process with lowest PID (highest priority)
+            auto highest_priority = ready_queue.begin();
+            for (auto it = ready_queue.begin(); it != ready_queue.end(); ++it)
             {
-                if (running.PID != -1 && running.remaining_time > 0)
+                if (it->PID < highest_priority->PID)
                 {
-                    running.state = READY;
-                    ready_queue.push_back(running);
-                    execution_status += print_exec_status(current_time, running.PID, RUNNING, READY);
+                    highest_priority = it;
                 }
-                running = *it;
-                running.state = RUNNING;
-                if (running.start_time == -1)
-                    running.start_time = current_time;
-                execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
-                ready_queue.erase(it);
             }
+
+            running = *highest_priority;
+            running.state = RUNNING;
+            if (running.start_time == -1)
+            {
+                running.start_time = current_time;
+            }
+            execution_status += print_exec_status(current_time, running.PID, READY, RUNNING);
+            ready_queue.erase(highest_priority);
         }
 
         // Execute running process
         if (running.PID != -1)
         {
             running.remaining_time -= 1;
-            if (running.remaining_time <= 0)
+
+            // Check for I/O request
+            if (running.io_freq > 0 &&
+                (running.processing_time - running.remaining_time) % running.io_freq == 0 &&
+                running.remaining_time > 0)
+            {
+
+                running.state = WAITING;
+                running.remaining_time = running.io_duration;
+                wait_queue.push_back(running);
+                execution_status += print_exec_status(current_time, running.PID, RUNNING, WAITING);
+                idle_CPU(running);
+            }
+            // Check if process finished
+            else if (running.remaining_time <= 0)
             {
                 terminate_process(running, job_list);
                 execution_status += print_exec_status(current_time, running.PID, RUNNING, TERMINATED);
